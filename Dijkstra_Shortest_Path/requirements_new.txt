@@ -1,0 +1,19 @@
+# Farm-to-Market Route Optimizer - Dependencies
+
+# Core
+streamlit>=1.28.0
+networkx>=3.2.1
+
+# Map & Visualization
+folium>=0.14.0
+streamlit-folium>=0.15.0
+
+# HTTP Requests
+requests>=2.31.0
+
+# Data Processing
+pandas>=2.1.0
+numpy>=1.26.0
+
+# Optional: For better performance
+python-dotenv>=1.0.0
