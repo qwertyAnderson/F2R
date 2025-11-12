@@ -878,7 +878,7 @@ def main():
                 
                 if risk_factors:
                     # Unfavorable weather - reprioritize routes
-                    st.sidebar.warning(f"Weather risks detected: {', '.join(risk_factors)}")
+                    st.sidebar.warning(f"⚠️ Weather risks detected: {', '.join(risk_factors)}")
                     
                     # Reprioritize routes based on weather safety
                     reprioritized_routes = prioritize_routes_by_weather(st.session_state.routes)
@@ -1174,23 +1174,28 @@ def main():
                         for idx, member in enumerate(pool['members'], 1):
                             st.markdown(f"{idx}. {member['user']} - {member['quantity']} kg")
                         
-                        # Add booking button if pool has capacity and user not already in pool
+                        # Always show booking button
+                        st.markdown("---")
                         available_capacity = pool['max_capacity'] - pool['current_quantity']
-                        if available_capacity >= quantity:
-                            # Check if user already in this pool
-                            user_in_pool = any(member['user'] == 'Farmer' for member in pool['members'])
-                            
-                            if not user_in_pool:
-                                st.markdown("---")
-                                if st.button(f"Book {pool_id}", key=f"book_{pool_id}", use_container_width=True):
-                                    # Add user to pool
-                                    add_to_pool(pool_id, quantity, "Farmer")
-                                    st.success(f"Successfully booked {pool_id}! Your transport is confirmed.")
-                                    st.rerun()
-                            else:
-                                st.info("You are already a member of this pool")
-                        else:
+                        
+                        # Check if user already in this pool
+                        user_in_pool = any(member['user'] == 'Farmer' for member in pool['members'])
+                        
+                        if user_in_pool:
+                            # User already in pool - show disabled button with confirmation
+                            st.button(f"✓ Already Booked", key=f"book_{pool_id}", disabled=True, use_container_width=True)
+                            st.info("You are a member of this pool")
+                        elif available_capacity < quantity:
+                            # Insufficient capacity - show disabled button
+                            st.button(f"Book {pool_id}", key=f"book_{pool_id}", disabled=True, use_container_width=True)
                             st.warning(f"Insufficient capacity ({available_capacity} kg available)")
+                        else:
+                            # Available to book - show active button
+                            if st.button(f"Book {pool_id}", key=f"book_{pool_id}", use_container_width=True):
+                                # Add user to pool
+                                add_to_pool(pool_id, quantity, "Farmer")
+                                st.success(f"Successfully booked {pool_id}! Your transport is confirmed.")
+                                st.rerun()
     
     else:
         # Welcome screen
