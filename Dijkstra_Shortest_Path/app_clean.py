@@ -52,6 +52,11 @@ CROP_TYPES = {
     "Non-Perishable": {"urgency": 0.8, "color": "#96CEB4"}
 }
 
+# POOLING CONSTANTS
+MAX_VEHICLE_CAPACITY = 1000  # kg
+START_RADIUS = 1.0  # km
+END_RADIUS = 2.0  # km
+
 # Custom CSS
 st.markdown("""
 <style>
@@ -594,6 +599,120 @@ def prioritize_routes_by_weather(routes):
     return scored_routes
 
 # ===============================
+# POOLING / CLUSTERING FUNCTIONS
+# ===============================
+
+def initialize_pools():
+    """Initialize pool data structure in session state"""
+    if 'pools' not in st.session_state:
+        st.session_state.pools = {}
+        st.session_state.pool_counter = 0
+
+def find_compatible_pool(start_coords, end_coords, crop_type, quantity):
+    """
+    Find an existing pool that matches the request criteria
+    
+    Returns: (pool_id, pool_data) if found, else (None, None)
+    """
+    for pool_id, pool in st.session_state.pools.items():
+        # Check crop type compatibility
+        if pool['crop_type'] != crop_type:
+            continue
+        
+        # Check if pool has enough capacity
+        available_capacity = pool['max_capacity'] - pool['current_quantity']
+        if available_capacity < quantity:
+            continue
+        
+        # Check start location proximity (within START_RADIUS km)
+        start_dist = calculate_distance(
+            start_coords[0], start_coords[1],
+            pool['start_zone'][0], pool['start_zone'][1]
+        )
+        if start_dist > START_RADIUS:
+            continue
+        
+        # Check end location proximity (within END_RADIUS km)
+        end_dist = calculate_distance(
+            end_coords[0], end_coords[1],
+            pool['end_zone'][0], pool['end_zone'][1]
+        )
+        if end_dist > END_RADIUS:
+            continue
+        
+        # Found a compatible pool!
+        return pool_id, pool
+    
+    return None, None
+
+def create_new_pool(start_coords, end_coords, crop_type, quantity, user_name="Farmer"):
+    """Create a new pool with the given request as first member"""
+    st.session_state.pool_counter += 1
+    pool_id = f"Pool_{st.session_state.pool_counter}"
+    
+    new_pool = {
+        "crop_type": crop_type,
+        "start_zone": start_coords,
+        "end_zone": end_coords,
+        "current_quantity": quantity,
+        "max_capacity": MAX_VEHICLE_CAPACITY,
+        "members": [
+            {"user": user_name, "quantity": quantity}
+        ],
+        "color": CROP_TYPES[crop_type]["color"]
+    }
+    
+    st.session_state.pools[pool_id] = new_pool
+    return pool_id, new_pool
+
+def add_to_pool(pool_id, quantity, user_name="Farmer"):
+    """Add a new member to an existing pool"""
+    pool = st.session_state.pools[pool_id]
+    pool['current_quantity'] += quantity
+    pool['members'].append({"user": user_name, "quantity": quantity})
+    
+def handle_pool_request(start_location, end_location, crop_type, quantity):
+    """
+    Main pooling logic handler
+    
+    Returns: (success, message, pool_id)
+    """
+    start_coords = DEHRADUN_LOCATIONS[start_location]
+    end_coords = DEHRADUN_LOCATIONS[end_location]
+    
+    # Find compatible pool
+    pool_id, pool = find_compatible_pool(start_coords, end_coords, crop_type, quantity)
+    
+    if pool_id:
+        # Add to existing pool
+        add_to_pool(pool_id, quantity)
+        available_after = pool['max_capacity'] - pool['current_quantity']
+        
+        message = f"""
+        ✅ **Pool Found!** You've been added to **{pool_id}**
+        
+        📦 **Pool Details:**
+        - Crop Type: {pool['crop_type']}
+        - Total Load: {pool['current_quantity']} kg / {pool['max_capacity']} kg
+        - Available Capacity: {available_after} kg
+        - Members: {len(pool['members'])}
+        """
+        return True, message, pool_id
+    else:
+        # Create new pool
+        pool_id, new_pool = create_new_pool(start_coords, end_coords, crop_type, quantity)
+        
+        message = f"""
+        🚫 **No existing pool available** for this crop type and route.
+        
+        ✅ **A new pool has been created!** ({pool_id})
+        - Crop Type: {crop_type}
+        - Current Load: {quantity} kg / {MAX_VEHICLE_CAPACITY} kg
+        - You'll be notified when others join this pool.
+        """
+        return False, message, pool_id
+
+# ===============================
 # MAIN APPLICATION
 # ===============================
 
@@ -607,6 +726,9 @@ def main():
         st.session_state.routes = []
     if 'weather_checked' not in st.session_state:
         st.session_state.weather_checked = False
+    
+    # Initialize pooling system
+    initialize_pools()
     
     # Sidebar
     st.sidebar.header(" Route Configuration")
@@ -722,6 +844,38 @@ def main():
                         st.sidebar.markdown(f"✅ **{r['name']}**: {score:.0f}/100")
         else:
             st.sidebar.warning("🔍 Please calculate routes first!")
+    
+    # Find a Pool button (3rd action button)
+    if st.sidebar.button("🚛 Find a Pool", use_container_width=True):
+        found, message, pool_id = handle_pool_request(
+            start_location, 
+            end_location, 
+            crop_type, 
+            quantity
+        )
+        
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### 🚛 Pooling Result")
+        st.sidebar.info(message)
+    
+    # Display active pools in sidebar
+    if st.session_state.pools:
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### 📦 Active Pools")
+        
+        for pool_id, pool in st.session_state.pools.items():
+            with st.sidebar.expander(f"{pool_id} - {pool['crop_type']}", expanded=False):
+                st.markdown(f"""
+                **Crop Type:** {pool['crop_type']}  
+                **Total Load:** {pool['current_quantity']} kg / {pool['max_capacity']} kg  
+                **Available:** {pool['max_capacity'] - pool['current_quantity']} kg  
+                **Members:** {len(pool['members'])}
+                """)
+                
+                # Show members
+                st.markdown("**👥 Members:**")
+                for idx, member in enumerate(pool['members'], 1):
+                    st.markdown(f"{idx}. {member['user']} - {member['quantity']} kg")
     
     # Main content area
     if st.session_state.routes:
