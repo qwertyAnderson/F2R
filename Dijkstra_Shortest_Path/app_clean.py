@@ -854,28 +854,9 @@ def main():
             quantity
         )
         
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("### 🚛 Pooling Result")
-        st.sidebar.info(message)
-    
-    # Display active pools in sidebar
-    if st.session_state.pools:
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("### 📦 Active Pools")
-        
-        for pool_id, pool in st.session_state.pools.items():
-            with st.sidebar.expander(f"{pool_id} - {pool['crop_type']}", expanded=False):
-                st.markdown(f"""
-                **Crop Type:** {pool['crop_type']}  
-                **Total Load:** {pool['current_quantity']} kg / {pool['max_capacity']} kg  
-                **Available:** {pool['max_capacity'] - pool['current_quantity']} kg  
-                **Members:** {len(pool['members'])}
-                """)
-                
-                # Show members
-                st.markdown("**👥 Members:**")
-                for idx, member in enumerate(pool['members'], 1):
-                    st.markdown(f"{idx}. {member['user']} - {member['quantity']} kg")
+        # Store the result message in session state to display on right side
+        st.session_state.pool_result_message = message
+        st.session_state.show_pool_result = True
     
     # Main content area
     if st.session_state.routes:
@@ -1011,6 +992,31 @@ def main():
                         st.info(" Good alternative")
                     else:
                         st.warning("⚠️ Consider only if necessary. Might take longer time")
+            
+            # Display pool information section (below route details)
+            if 'show_pool_result' in st.session_state and st.session_state.show_pool_result:
+                st.markdown("---")
+                st.markdown("### 🚛 Pooling Result")
+                st.info(st.session_state.pool_result_message)
+            
+            # Display active pools
+            if st.session_state.pools:
+                st.markdown("---")
+                st.markdown("### 📦 Active Pools")
+                
+                for pool_id, pool in st.session_state.pools.items():
+                    with st.expander(f"{pool_id} - {pool['crop_type']}", expanded=False):
+                        st.markdown(f"""
+                        **Crop Type:** {pool['crop_type']}  
+                        **Total Load:** {pool['current_quantity']} kg / {pool['max_capacity']} kg  
+                        **Available:** {pool['max_capacity'] - pool['current_quantity']} kg  
+                        **Members:** {len(pool['members'])}
+                        """)
+                        
+                        # Show members
+                        st.markdown("**👥 Members:**")
+                        for idx, member in enumerate(pool['members'], 1):
+                            st.markdown(f"{idx}. {member['user']} - {member['quantity']} kg")
     
     else:
         # Welcome screen
