@@ -5,12 +5,12 @@ streamlit-folium==0.15.0
 
 # Data & API
 requests==2.31.0
-pandas==2.1.4
-numpy==1.26.2
+pandas>=2.0.0
+numpy>=1.24.0
 
 # Visualization  
-matplotlib==3.8.2
-seaborn==0.12.2
+matplotlib
+seaborn
 
 # Network Analysis
 networkx==3.2.1

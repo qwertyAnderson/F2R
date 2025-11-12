@@ -13,14 +13,16 @@ Interactive Streamlit web app for optimizing farm-to-market transport routes wit
 ## Project Structure
 
 ```
-Farm2Road/
-├── main.py                # Main Streamlit application (all-in-one)
-├── requirements.txt       # Python dependencies
+d:\PY_PBL\
+├── .git/                 # Git repository
 ├── .gitignore            # Git ignore rules
-├── .streamlit/           # Streamlit config
-├── cache/                # API response cache (runtime)
-├── archive/              # Old versions and backups
-└── README.md             # This file
+└── Farm2Road/
+    ├── main.py           # Main Streamlit application (all-in-one)
+    ├── requirements.txt  # Python dependencies
+    ├── README.md         # This file
+    ├── .streamlit/       # Streamlit config (secrets.toml)
+    ├── cache/            # API response cache (runtime)
+    └── archive/          # Old versions and backups
 ```
 
 ## Libraries (one-line purpose each)
@@ -34,28 +36,28 @@ Farm2Road/
 
 ## How to run locally (short)
 
-1. Open PowerShell, navigate to project folder:
+1. Open PowerShell, navigate to project root:
 
 ```powershell
-cd D:\dijk\Farm2Road
+cd D:\PY_PBL
 ```
 
 2. Create venv & install deps:
 
 ```powershell
-python -m venv .venv; .\.venv\Scripts\Activate.ps1; pip install -r requirements.txt
+python -m venv .venv; .\.venv\Scripts\Activate.ps1; pip install -r Farm2Road\requirements.txt
 ```
 
 3. Start the app:
 
 ```powershell
-streamlit run main.py
+streamlit run Farm2Road\main.py
 ```
 
 4. Open the Local URL shown by Streamlit in your browser.
 
 ## Notes
 
-- Default locations and pooling logic live in `app_clean.py`.
-- MapMyIndia key is present as a fallback; replace with your own key for production.
-- Pool bookings are stored in Streamlit session state only (no DB or payment integration).
+- All application logic is in `main.py` (single-file architecture).
+- MapMyIndia API key is in `.streamlit/secrets.toml`; replace with your own key for production.
+- Pool bookings are stored in Streamlit session state only (no database or payment integration).
