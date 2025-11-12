@@ -57,6 +57,11 @@ MAX_VEHICLE_CAPACITY = 1000  # kg
 START_RADIUS = 1.0  # km
 END_RADIUS = 2.0  # km
 
+# COST CALCULATION CONSTANTS
+SOLO_RATE_PER_KM = 20  # ₹ per km
+POOLING_DISCOUNT = 0.9  # 10% discount
+AVG_VEHICLE_SPEED = 18  # km/hr
+
 # Custom CSS
 st.markdown("""
 <style>
@@ -484,7 +489,7 @@ def create_crop_suitability_chart(crop_type, routes):
     # Create bar chart
     bars = ax.bar(route_names, suitability_scores, color=colors, alpha=0.7, edgecolor='black', linewidth=1)
     ax.set_ylabel('Suitability Score (0-100)', fontsize=12, fontweight='bold')
-    ax.set_title(f'🌾 Route Suitability for {crop_type} Crops', fontsize=14, fontweight='bold', pad=20)
+    ax.set_title(f'Route Suitability for {crop_type} Crops', fontsize=14, fontweight='bold', pad=20)
     ax.set_ylim(0, 100)
     ax.grid(axis='y', alpha=0.3)
     
@@ -520,7 +525,7 @@ def create_weather_timeline_chart(weather_data):
     temps = [20 + 5 * math.sin((h - 6) * math.pi / 12) for h in hours]
     ax1.plot(hours, temps, color='red', linewidth=2, marker='o', markersize=4)
     ax1.set_ylabel('Temperature (°C)', fontweight='bold')
-    ax1.set_title('🌡️ 24-Hour Weather Forecast', fontweight='bold')
+    ax1.set_title(' 24-Hour Weather Forecast', fontweight='bold')
     ax1.grid(True, alpha=0.3)
     ax1.set_xlim(0, 23)
     
@@ -528,7 +533,7 @@ def create_weather_timeline_chart(weather_data):
     precip = [max(0, 30 + 20 * math.sin(h * math.pi / 8)) for h in hours]
     ax2.bar(hours, precip, color='blue', alpha=0.6)
     ax2.set_ylabel('Precipitation (%)', fontweight='bold')
-    ax2.set_title('🌧️ Precipitation Probability', fontweight='bold')
+    ax2.set_title(' Precipitation Probability', fontweight='bold')
     ax2.grid(True, alpha=0.3)
     ax2.set_xlim(-0.5, 23.5)
     
@@ -537,7 +542,7 @@ def create_weather_timeline_chart(weather_data):
     ax3.plot(hours, wind, color='green', linewidth=2, marker='s', markersize=4)
     ax3.set_ylabel('Wind Speed (km/h)', fontweight='bold')
     ax3.set_xlabel('Hour of Day', fontweight='bold')
-    ax3.set_title('💨 Wind Speed Forecast', fontweight='bold')
+    ax3.set_title(' Wind Speed Forecast', fontweight='bold')
     ax3.grid(True, alpha=0.3)
     ax3.set_xlim(0, 23)
     
@@ -689,28 +694,96 @@ def handle_pool_request(start_location, end_location, crop_type, quantity):
         available_after = pool['max_capacity'] - pool['current_quantity']
         
         message = f"""
-        ✅ **Pool Found!** You've been added to **{pool_id}**
+**Pool Found!** You've been added to **{pool_id}**
         
-        📦 **Pool Details:**
-        - Crop Type: {pool['crop_type']}
-        - Total Load: {pool['current_quantity']} kg / {pool['max_capacity']} kg
-        - Available Capacity: {available_after} kg
-        - Members: {len(pool['members'])}
-        """
+**Pool Details:**
+- Crop Type: {pool['crop_type']}
+- Total Load: {pool['current_quantity']} kg / {pool['max_capacity']} kg
+- Available Capacity: {available_after} kg
+- Members: {len(pool['members'])}
+"""
         return True, message, pool_id
     else:
         # Create new pool
         pool_id, new_pool = create_new_pool(start_coords, end_coords, crop_type, quantity)
         
         message = f"""
-        🚫 **No existing pool available** for this crop type and route.
+**No existing pool available** for this crop type and route.
         
-        ✅ **A new pool has been created!** ({pool_id})
-        - Crop Type: {crop_type}
-        - Current Load: {quantity} kg / {MAX_VEHICLE_CAPACITY} kg
-        - You'll be notified when others join this pool.
-        """
+**A new pool has been created!** ({pool_id})
+- Crop Type: {crop_type}
+- Current Load: {quantity} kg / {MAX_VEHICLE_CAPACITY} kg
+- You'll be notified when others join this pool.
+"""
         return False, message, pool_id
+
+def calculate_transport_cost(distance_km, crop_type, quantity_kg, start_location, end_location):
+    """
+    Calculate solo and pooled transport costs
+    
+    Returns: (solo_cost, pooled_cost, pool_info, pool_message)
+    """
+    urgency_factor = CROP_TYPES[crop_type]["urgency"]
+    
+    # Solo Cost
+    solo_cost = distance_km * SOLO_RATE_PER_KM * urgency_factor
+    
+    # Check if user is in a pool for this route
+    pooled_cost = None
+    pool_info = None
+    pool_message = None
+    
+    start_coords = DEHRADUN_LOCATIONS[start_location]
+    end_coords = DEHRADUN_LOCATIONS[end_location]
+    
+    # Find if there's a pool for this route
+    pool_found = False
+    for pool_id, pool in st.session_state.pools.items():
+        # Check if this route matches the pool
+        start_dist = calculate_distance(
+            start_coords[0], start_coords[1],
+            pool['start_zone'][0], pool['start_zone'][1]
+        )
+        end_dist = calculate_distance(
+            end_coords[0], end_coords[1],
+            pool['end_zone'][0], pool['end_zone'][1]
+        )
+        
+        if start_dist <= START_RADIUS and end_dist <= END_RADIUS and pool['crop_type'] == crop_type:
+            # Found matching pool
+            pool_found = True
+            total_pool_weight = pool['current_quantity']
+            pool_size = len(pool['members'])
+            
+            # Check if user is the only member (pool size = 1)
+            if pool_size == 1:
+                # User is alone in the pool, no pooled discount applies
+                pooled_cost = None
+                pool_message = "You're the first member of this pool. Waiting for others to join. Solo rate applies for now."
+                pool_info = {
+                    'pool_id': pool_id,
+                    'total_weight': total_pool_weight,
+                    'members': pool_size,
+                    'status': 'waiting'
+                }
+            else:
+                # Pool has multiple members, calculate pooled cost
+                pooled_cost = (distance_km * SOLO_RATE_PER_KM * POOLING_DISCOUNT * 
+                              urgency_factor * (quantity_kg / total_pool_weight))
+                pool_info = {
+                    'pool_id': pool_id,
+                    'total_weight': total_pool_weight,
+                    'members': pool_size,
+                    'your_share': (quantity_kg / total_pool_weight) * 100,
+                    'status': 'active'
+                }
+            break
+    
+    # No pool found at all
+    if not pool_found:
+        pool_message = "No active pool available. You can create a pool using 'Find a Pool' button."
+    
+    return solo_cost, pooled_cost, pool_info, pool_message
 
 # ===============================
 # MAIN APPLICATION
@@ -731,18 +804,18 @@ def main():
     initialize_pools()
     
     # Sidebar
-    st.sidebar.header(" Route Configuration")
+    st.sidebar.header("Route Configuration")
     
     # Location selection
     start_location = st.sidebar.selectbox(
-        " Start Location (Farm)",
+        "Start Location (Farm)",
         options=list(DEHRADUN_LOCATIONS.keys()),
         index=0,
         help="Select your farm location"
     )
     
     end_location = st.sidebar.selectbox(
-        " End Location (Market)", 
+        "End Location (Market)", 
         options=list(DEHRADUN_LOCATIONS.keys()),
         index=4,
         help="Select your target market"
@@ -767,7 +840,7 @@ def main():
     
     # Action buttons
     st.sidebar.markdown("---")
-    st.sidebar.markdown("###  Actions")
+    st.sidebar.markdown("### Actions")
     
     # Get routes button
     if st.sidebar.button("Get Shortest Path", type="primary", use_container_width=True):
@@ -775,7 +848,7 @@ def main():
             start_coords = DEHRADUN_LOCATIONS[start_location]
             end_coords = DEHRADUN_LOCATIONS[end_location]
             
-            with st.spinner(" Finding  road routes..."):
+            with st.spinner("Finding real road routes..."):
                 routes = get_real_road_route(start_coords, end_coords)
                 st.session_state.routes = routes
                 st.session_state.weather_checked = False
@@ -785,9 +858,9 @@ def main():
             st.sidebar.error("Please select different locations!")
     
     # Weather check button
-    if st.sidebar.button("🌦️ Reroute Based on Weather", use_container_width=True):
+    if st.sidebar.button("Reroute Based on Weather", use_container_width=True):
         if st.session_state.routes:
-            with st.spinner("🌦️ Analyzing weather conditions and prioritizing routes..."):
+            with st.spinner("Analyzing weather conditions and prioritizing routes..."):
                 # Get weather for first route to check conditions
                 route = st.session_state.routes[0]
                 start_weather = get_weather_data(route['coordinates'][0][0], route['coordinates'][0][1])
@@ -805,7 +878,7 @@ def main():
                 
                 if risk_factors:
                     # Unfavorable weather - reprioritize routes
-                    st.sidebar.warning(f"⚠️ Weather risks detected: {', '.join(risk_factors)}")
+                    st.sidebar.warning(f"Weather risks detected: {', '.join(risk_factors)}")
                     
                     # Reprioritize routes based on weather safety
                     reprioritized_routes = prioritize_routes_by_weather(st.session_state.routes)
@@ -816,37 +889,37 @@ def main():
                     new_best = reprioritized_routes[0]['name']
                     
                     # Display weather safety scores
-                    st.sidebar.markdown("### 🛡️ Weather Safety Analysis")
+                    st.sidebar.markdown("### Weather Safety Analysis")
                     for i, r in enumerate(reprioritized_routes[:3]):
                         score = r.get('weather_safety_score', 0)
-                        emoji = "✅" if score >= 80 else "⚠️" if score >= 60 else "❌"
-                        st.sidebar.markdown(f"{emoji} **{r['name']}**: Safety Score {score:.0f}/100")
+                        status = "Very Safe" if score >= 80 else "Caution" if score >= 60 else "High Risk"
+                        st.sidebar.markdown(f"**{r['name']}**: Safety Score {score:.0f}/100 - {status}")
                     
                     if original_best != new_best:
-                        st.sidebar.success(f" Route reprioritized! New recommendation: {new_best}")
-                        st.sidebar.info(" Routes reordered by weather safety. Check the map for the safest route (shown in red).")
+                        st.sidebar.success(f"Route reprioritized! New recommendation: {new_best}")
+                        st.sidebar.info("Routes reordered by weather safety. Check the map for the safest route (shown in red).")
                     else:
-                        st.sidebar.info(" Current route is still the safest option despite weather risks")
+                        st.sidebar.info("Current route is still the safest option despite weather risks")
                     
-                    st.sidebar.warning(" Consider delaying travel if weather worsens")
+                    st.sidebar.warning("Consider delaying travel if weather worsens")
                     
                 else:
                     # Favorable weather
-                    st.sidebar.success(" Weather conditions are favorable for travel!")
+                    st.sidebar.success("Weather conditions are favorable for travel!")
                     
                     # Still calculate and show safety scores
                     scored_routes = prioritize_routes_by_weather(st.session_state.routes)
                     st.session_state.routes = scored_routes
                     
-                    st.sidebar.markdown("### 🛡️ Weather Safety Scores")
+                    st.sidebar.markdown("### Weather Safety Scores")
                     for i, r in enumerate(scored_routes[:3]):
                         score = r.get('weather_safety_score', 0)
-                        st.sidebar.markdown(f"✅ **{r['name']}**: {score:.0f}/100")
+                        st.sidebar.markdown(f"**{r['name']}**: {score:.0f}/100")
         else:
-            st.sidebar.warning("🔍 Please calculate routes first!")
+            st.sidebar.warning("Please calculate routes first!")
     
     # Find a Pool button (3rd action button)
-    if st.sidebar.button("🚛 Find a Pool", use_container_width=True):
+    if st.sidebar.button("Find a Pool", use_container_width=True):
         found, message, pool_id = handle_pool_request(
             start_location, 
             end_location, 
@@ -857,6 +930,30 @@ def main():
         # Store the result message in session state to display on right side
         st.session_state.pool_result_message = message
         st.session_state.show_pool_result = True
+    
+    # Estimated Cost button (4th action button)
+    if st.sidebar.button("Estimated Cost", use_container_width=True):
+        if st.session_state.routes:
+            # Get distance from the first (shortest) route
+            distance_km = st.session_state.routes[0]['distance']
+            
+            # Calculate costs
+            solo_cost, pooled_cost, pool_info, pool_message = calculate_transport_cost(
+                distance_km,
+                crop_type,
+                quantity,
+                start_location,
+                end_location
+            )
+            
+            # Store in session state to display in main area
+            st.session_state.cost_calculated = True
+            st.session_state.solo_cost = solo_cost
+            st.session_state.pooled_cost = pooled_cost
+            st.session_state.pool_info = pool_info
+            st.session_state.pool_message = pool_message
+        else:
+            st.sidebar.warning(" Please calculate route first!")
     
     # Main content area
     if st.session_state.routes:
@@ -920,10 +1017,69 @@ def main():
                     plt.close()
             else:
                 st.info(" Multiple routes needed for comparison analysis")
+            
+            # Cost Display Section (below charts)
+            if 'cost_calculated' in st.session_state and st.session_state.cost_calculated:
+                st.markdown("---")
+                st.markdown("### Estimated Transport Cost")
+                
+                # Create two columns for Solo and Pooled cost side by side
+                cost_col1, cost_col2 = st.columns(2)
+                
+                with cost_col1:
+                    st.markdown("""
+                    <div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center;'>
+                        <h4 style='color: #1f77b4; margin-bottom: 10px;'>Solo Cost</h4>
+                        <h2 style='color: #2e7d32; margin: 0;'>&#8377;{:.2f}</h2>
+                    </div>
+                    """.format(st.session_state.solo_cost), unsafe_allow_html=True)
+                
+                with cost_col2:
+                    if st.session_state.pooled_cost is not None:
+                        st.markdown("""
+                        <div style='background-color: #e8f5e9; padding: 20px; border-radius: 10px; text-align: center;'>
+                            <h4 style='color: #388e3c; margin-bottom: 10px;'>Pooled Cost</h4>
+                            <h2 style='color: #1b5e20; margin: 0;'>&#8377;{:.2f}</h2>
+                        </div>
+                        """.format(st.session_state.pooled_cost), unsafe_allow_html=True)
+                    else:
+                        # Show message based on pool status
+                        pool_message = st.session_state.get('pool_message', 'No pool available')
+                        st.markdown(f"""
+                        <div style='background-color: #fff3e0; padding: 20px; border-radius: 10px; text-align: center;'>
+                            <h4 style='color: #f57c00; margin-bottom: 10px;'>Pooled Cost</h4>
+                            <p style='color: #e65100; margin: 0; font-weight: 500; font-size: 0.9em;'>{pool_message}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                
+                # Savings section (only if pool exists)
+                if st.session_state.pooled_cost is not None:
+                    savings = st.session_state.solo_cost - st.session_state.pooled_cost
+                    savings_percent = (savings / st.session_state.solo_cost * 100)
+                    
+                    st.markdown(f"""
+                    <div style='background-color: #fff3e0; padding: 15px; border-radius: 10px; margin-top: 15px; text-align: center;'>
+                        <h4 style='color: #f57c00; margin-bottom: 5px;'>&#128161; Your Savings</h4>
+                        <h3 style='color: #e65100; margin: 0;'>&#8377;{savings:.2f} ({savings_percent:.1f}% off)</h3>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Pool Details
+                    pool_info = st.session_state.pool_info
+                    st.markdown("---")
+                    st.markdown("#### Pool Details")
+                    
+                    detail_col1, detail_col2 = st.columns(2)
+                    with detail_col1:
+                        st.markdown(f"**Pool ID:** {pool_info['pool_id']}")
+                        st.markdown(f"**Total Members:** {pool_info['members']}")
+                    with detail_col2:
+                        st.markdown(f"**Your Weight Share:** {pool_info['your_share']:.1f}%")
+                        st.markdown(f"**Total Weight:** {pool_info['total_weight']:.0f} kg")
         
         with col2:
             # Route details sidebar
-            st.markdown("###  Route Details")
+            st.markdown("### Route Details")
             
             # Summary metrics
             best_route = st.session_state.routes[0]
@@ -931,19 +1087,19 @@ def main():
             col_a, col_b = st.columns(2)
             with col_a:
                 st.metric(
-                    label=" Best Distance", 
+                    label="Best Distance", 
                     value=f"{best_route['distance']:.1f} km",
                     help="Shortest route distance"
                 )
             with col_b:
                 st.metric(
-                    label="⏱ Best Time", 
+                    label="Best Time", 
                     value=f"{best_route['duration']:.0f} min",
                     help="Fastest route duration"
                 )
             
             # Crop information
-            st.markdown("###  Cargo Information")
+            st.markdown("### Cargo Information")
             st.markdown(f"""
             <div class="metric-container">
                 <strong>Crop Type:</strong> {crop_type}<br>
@@ -952,7 +1108,7 @@ def main():
             """, unsafe_allow_html=True)
             
             # Individual route details
-            st.markdown("###  All Routes")
+            st.markdown("### All Routes")
             
             for i, route in enumerate(st.session_state.routes):
                 with st.expander(f" {route['name']}", expanded=(i==0)):
@@ -974,14 +1130,14 @@ def main():
                         score = route['weather_safety_score']
                         col_w1, col_w2 = st.columns(2)
                         with col_w1:
-                            st.metric("🛡️ Weather Safety", f"{score:.0f}/100")
+                            st.metric(" Weather Safety", f"{score:.0f}/100")
                         with col_w2:
                             if score >= 80:
-                                st.success("✅ Very Safe")
+                                st.success(" Very Safe")
                             elif score >= 60:
-                                st.warning("⚠️ Caution Advised")
+                                st.warning(" Caution Advised")
                             else:
-                                st.error("❌ High Risk")
+                                st.error(" High Risk")
                         
             
                     
@@ -991,18 +1147,18 @@ def main():
                     elif route['duration'] < best_route['duration'] * 1.2:
                         st.info(" Good alternative")
                     else:
-                        st.warning("⚠️ Consider only if necessary. Might take longer time")
+                        st.warning("Consider only if necessary. Might take longer time")
             
             # Display pool information section (below route details)
             if 'show_pool_result' in st.session_state and st.session_state.show_pool_result:
                 st.markdown("---")
-                st.markdown("### 🚛 Pooling Result")
+                st.markdown("### Pooling Result")
                 st.info(st.session_state.pool_result_message)
             
             # Display active pools
             if st.session_state.pools:
                 st.markdown("---")
-                st.markdown("### 📦 Active Pools")
+                st.markdown("### Active Pools")
                 
                 for pool_id, pool in st.session_state.pools.items():
                     with st.expander(f"{pool_id} - {pool['crop_type']}", expanded=False):
@@ -1014,19 +1170,37 @@ def main():
                         """)
                         
                         # Show members
-                        st.markdown("**👥 Members:**")
+                        st.markdown("**Members:**")
                         for idx, member in enumerate(pool['members'], 1):
                             st.markdown(f"{idx}. {member['user']} - {member['quantity']} kg")
+                        
+                        # Add booking button if pool has capacity and user not already in pool
+                        available_capacity = pool['max_capacity'] - pool['current_quantity']
+                        if available_capacity >= quantity:
+                            # Check if user already in this pool
+                            user_in_pool = any(member['user'] == 'Farmer' for member in pool['members'])
+                            
+                            if not user_in_pool:
+                                st.markdown("---")
+                                if st.button(f"Book {pool_id}", key=f"book_{pool_id}", use_container_width=True):
+                                    # Add user to pool
+                                    add_to_pool(pool_id, quantity, "Farmer")
+                                    st.success(f"Successfully booked {pool_id}! Your transport is confirmed.")
+                                    st.rerun()
+                            else:
+                                st.info("You are already a member of this pool")
+                        else:
+                            st.warning(f"Insufficient capacity ({available_capacity} kg available)")
     
     else:
         # Welcome screen
-        st.markdown("###  Getting Started")
+        st.markdown("### Getting Started")
         
         col1, col2 = st.columns([2, 1])
         
         with col1:
             # Default map showing all locations
-            st.markdown("####  Dehradun Farm & Market Locations")
+            st.markdown("#### Dehradun Farm & Market Locations")
             
             default_map = folium.Map(location=[30.3165, 78.0322], zoom_start=10, tiles='OpenStreetMap')
             
@@ -1050,19 +1224,25 @@ def main():
             st_folium(default_map, width=700, height=400)
         
         with col2:
-            st.markdown("####  Quick Start Guide")
+            st.markdown("#### Quick Start Guide")
             st.markdown("""
-            **Step 1:**  Select your **farm location**
+            **Step 1:** Select your **farm location**
             
-            **Step 2:**  Choose your **target market**
+            **Step 2:** Choose your **target market**
             
-            **Step 3:**  Pick your **crop type** based on perishability
+            **Step 3:** Pick your **crop type** based on perishability
             
-            **Step 4:**  Enter **quantity** in kilograms
+            **Step 4:** Enter **quantity** in kilograms
             
-            **Step 5:**  Click **"Get Shortest Path"**
+            **Step 5:** Click **"Get Shortest Path"**
             
-            **Step 6:**  Check **weather conditions** for safety
+            **Step 6:** Check **weather conditions** for safety
+            
+            **Step 7:** Click **"Find a Pool"** to join/create transport pool
+            
+            **Step 8:** Click **"Estimated Cost"** to view solo & pooled rates
+            
+            **Step 9:** View route details and active pools on the right and book a pool
             """)
 
 if __name__ == "__main__":
