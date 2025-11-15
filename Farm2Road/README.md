@@ -21,8 +21,7 @@ d:\PY_PBL\
     ├── requirements.txt  # Python dependencies
     ├── README.md         # This file
     ├── .streamlit/       # Streamlit config (secrets.toml)
-    ├── cache/            # API response cache (runtime)
-    └── archive/          # Old versions and backups
+    └── cache/            # API response cache (runtime)
 ```
 
 ## Libraries (one-line purpose each)

@@ -1101,11 +1101,16 @@ def main():
             # Crop information
             st.markdown("### Cargo Information")
             st.markdown(f"""
-            <div class="metric-container">
-                <strong>Crop Type:</strong> {crop_type}<br>
-                <strong>Quantity:</strong> {quantity} kg
+            <div style='background: #f0f2f6; padding: 15px; border-radius: 8px;'>
+                <div style='font-size: 0.9rem; color: #555; margin-bottom: 8px;'>
+                    <strong>Crop Type:</strong> {crop_type}
+                </div>
+                <div style='font-size: 0.9rem; color: #555;'>
+                    <strong>Quantity:</strong> {quantity} kg
+                </div>
             </div>
             """, unsafe_allow_html=True)
+            st.markdown("")  # Add spacing
             
             # Individual route details
             st.markdown("### All Routes")

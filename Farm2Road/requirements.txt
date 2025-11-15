@@ -7,6 +7,7 @@ streamlit-folium==0.15.0
 requests==2.31.0
 pandas>=2.0.0
 numpy>=1.24.0
+polyline>=2.0.0
 
 # Visualization  
 matplotlib
@@ -15,5 +16,5 @@ seaborn
 # Network Analysis
 networkx==3.2.1
 
-# Weather API (Open-Meteo is free, no key needed)
-# Route API - MapMyIndia (requires free API key)
+# Weather API (Open-Meteo)
+# Route API - (MapMyIndia))
